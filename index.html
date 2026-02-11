@@ -50,11 +50,15 @@
 
         // 1. 監聽登錄狀態
         _supabase.auth.onAuthStateChanged((event, session) => {
+            console.log("Auth Event:", event); // 測試用，可以在 Console 看到狀態
             if (session) {
                 document.getElementById('auth-area').style.display = 'none';
                 document.getElementById('upload-area').style.display = 'block';
+                loadGames();
+            } else {
+                document.getElementById('auth-area').style.display = 'block';
+                document.getElementById('upload-area').style.display = 'none';
             }
-            loadGames();
         });
 
         // 2. 載入所有遊戲
