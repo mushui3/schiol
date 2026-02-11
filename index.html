@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <title>我的極簡遊戲平台</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        body { font-family: sans-serif; display: flex; height: 100vh; margin: 0; background: #111; color: white; }
+        #sidebar { width: 300px; border-right: 1px solid #333; padding: 20px; overflow-y: auto; }
+        #main-content { flex-grow: 1; display: flex; flex-direction: column; }
+        iframe { width: 100%; flex-grow: 1; border: none; background: white; }
+        .game-item { padding: 10px; border: 1px solid #444; margin-bottom: 10px; cursor: pointer; border-radius: 5px; }
+        .game-item:hover { background: #222; }
+        .upload-panel { background: #222; padding: 15px; margin-top: 20px; border-radius: 5px; }
+        input, textarea { width: 100%; margin-bottom: 10px; background: #333; color: white; border: 1px solid #555; }
+    </style>
+</head>
+<body>
+
+    <div id="sidebar">
+        <h2>🎮 遊戲列表</h2>
+        <div id="game-list">載入中...</div>
+
+        <div id="auth-area" class="upload-panel">
+            <h3>開發者登錄</h3>
+            <input type="email" id="email" placeholder="Email">
+            <input type="password" id="pass" placeholder="Password">
+            <button onclick="login()">登錄</button>
+        </div>
+
+        <div id="upload-area" class="upload-panel" style="display:none">
+            <h3>發布新遊戲</h3>
+            <input type="text" id="title" placeholder="遊戲名稱">
+            <textarea id="desc" placeholder="遊戲介紹"></textarea>
+            <label>選擇遊戲 HTML 文件：</label>
+            <input type="file" id="game-file" accept=".html">
+            <button onclick="publishGame()" id="upload-btn">發布到平台</button>
+        </div>
+    </div>
+
+    <div id="main-content">
+        <div id="player-header" style="padding:10px; background:#222;">
+            請選擇一個遊戲開始遊玩
+        </div>
+        <iframe id="game-player" src="about:blank"></iframe>
+    </div>
+
+    <script>
+        const _supabase = supabase.createClient('https://xqlwpountntgjyloatmp.supabase.co', 'sb_publishable_UnvxxxxebS_EezifbnbCtA_2dm5gkCN');
+
+        // 1. 監聽登錄狀態
+        _supabase.auth.onAuthStateChanged((event, session) => {
+            if (session) {
+                document.getElementById('auth-area').style.display = 'none';
+                document.getElementById('upload-area').style.display = 'block';
+            }
+            loadGames();
+        });
+
+        // 2. 載入所有遊戲
+        async function loadGames() {
+            const { data } = await _supabase.from('games').select('*').order('created_at', {ascending: false});
+            const list = document.getElementById('game-list');
+            list.innerHTML = data.map(g => `
+                <div class="game-item" onclick="playGame('${g.game_url}', '${g.title}')">
+                    <strong>${g.title}</strong><br><small>${g.description}</small>
+                </div>
+            `).join('');
+        }
+
+        // 3. 遊玩遊戲
+        function playGame(url, title) {
+            document.getElementById('game-player').src = url;
+            document.getElementById('player-header').innerText = "正在遊玩：" + title;
+        }
+
+        // 4. 發布遊戲 (上傳檔案 + 寫入資料庫)
+        async function publishGame() {
+            const file = document.getElementById('game-file').files[0];
+            const title = document.getElementById('title').value;
+            const desc = document.getElementById('desc').value;
+            if(!file || !title) return alert('請填寫完整資訊');
+
+            const btn = document.getElementById('upload-btn');
+            btn.innerText = "上傳中...";
+            
+            // A. 上傳到 Storage
+            const fileName = `${Date.now()}_${file.name}`;
+            const { data: uploadData, error: uploadErr } = await _supabase.storage
+                .from('game-files')
+                .upload(fileName, file);
+
+            if(uploadErr) return alert(uploadErr.message);
+
+            // B. 獲取公開網址
+            const { data: { publicUrl } } = _supabase.storage.from('game-files').getPublicUrl(fileName);
+
+            // C. 寫入資料庫
+            const { error: dbErr } = await _supabase.from('games').insert([
+                { title: title, description: desc, game_url: publicUrl, developer_id: (await _supabase.auth.getUser()).data.user.id }
+            ]);
+
+            if(dbErr) alert(dbErr.message);
+            else {
+                alert('發布成功！');
+                location.reload();
+            }
+        }
+
+        async function login() {
+            const { error } = await _supabase.auth.signInWithPassword({
+                email: document.getElementById('email').value,
+                password: document.getElementById('password').value
+            });
+            if(error) alert(error.message);
+        }
+    </script>
+</body>
+</html>
